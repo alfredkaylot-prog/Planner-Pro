@@ -30,3 +30,31 @@ self.addEventListener("push", event => {
     body: data
   });
 });
+
+const CACHE_NAME = "planner-v2"; // increment version
+
+self.addEventListener("install", e => {
+  e.waitUntil(
+    caches.open(CACHE_NAME).then(cache => {
+      return cache.addAll([
+        "/index.html",
+        "/manifest.json",
+        "/service-worker.js",
+        "/icon.png"
+      ]);
+    })
+  );
+  self.skipWaiting();
+});
+
+self.addEventListener("activate", e => {
+  e.waitUntil(
+    caches.keys().then(keys => {
+      return Promise.all(
+        keys.filter(key => key !== CACHE_NAME)
+            .map(key => caches.delete(key))
+      );
+    })
+  );
+  self.clients.claim();
+});
