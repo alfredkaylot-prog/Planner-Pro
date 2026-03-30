@@ -1,0 +1,483 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Planner Pro</title>
+
+<link rel="manifest" href="manifest.json">
+<meta name="theme-color" content="#4CAF50">
+
+<style>
+* {
+  box-sizing: border-box;
+  transition: all 0.25s ease;
+}
+body {
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  margin:0;
+  background:#f7f7fb;
+  color:#1c1c1e;
+}
+
+/* WEEK GRID */
+.week {
+  display:grid;
+  grid-template-columns: repeat(7,1fr);
+  gap:15px;
+  padding:20px;
+}
+
+/* DAY CARDS */
+.day {
+  background: linear-gradient(145deg, #ffffff, #f0f1f6);
+  border-radius:22px;
+  padding:15px;
+  height:130px;
+  box-shadow: 
+    8px 8px 20px rgba(0,0,0,0.05),
+    -6px -6px 15px rgba(255,255,255,0.8);
+  transition: all 0.3s ease;
+}
+
+.day:hover {
+  transform: translateY(-8px) scale(1.02);
+}
+
+/* FOCUS MODE */
+.focus {
+  position:fixed;
+  top:0; left:0;
+  width:100%; height:100%;
+  background:#f7f7fb;
+  overflow:auto;
+  padding:25px;
+}
+
+/* HEADER */
+.focus h2 {
+  font-size:28px;
+  margin-bottom:10px;
+}
+
+.focus {
+  animation: fadeZoom 0.35s ease;
+}
+
+@keyframes fadeZoom {
+  from {
+    opacity: 0;
+    transform: scale(0.95);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+/* TASK CARD */
+.task {
+  background:white;
+  padding:15px;
+  margin:12px 0;
+  border-radius:16px;
+  box-shadow:0 6px 15px rgba(0,0,0,0.05);
+}
+
+.task {
+  animation: slideUp 0.4s ease;
+}
+
+@keyframes slideUp {
+  from {
+    opacity:0;
+    transform: translateY(15px);
+  }
+  to {
+    opacity:1;
+    transform: translateY(0);
+  }
+}
+/* TIMELINE STYLE */
+.timeline {
+  border-left:3px solid #e5e5ea;
+  padding-left:20px;
+}
+
+/* INPUT FIELDS */
+input {
+  padding:12px;
+  margin:8px 8px 12px 0;
+  border-radius:12px;
+  border:1px solid #ddd;
+  font-size:14px;
+}
+
+/* BUTTONS */
+button {
+  padding:10px 16px;
+  border:none;
+  border-radius:12px;
+  background:#007aff;
+  color:white;
+  font-weight:500;
+  cursor:pointer;
+  transition:0.2s;
+}
+
+button:hover {
+  background:#005ecb;
+}
+
+button:active {
+  transform: scale(0.95);
+}
+
+/* FLOATING BUTTON */
+.fab {
+  position:fixed;
+  bottom:25px;
+  right:25px;
+  width:60px;
+  height:60px;
+  background:#007aff;
+  color:white;
+  font-size:30px;
+  border-radius:50%;
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  box-shadow:0 10px 20px rgba(0,0,0,0.2);
+  cursor:pointer;
+}
+.fab {
+  animation: float 3s ease-in-out infinite;
+}
+
+@keyframes float {
+  0%,100% { transform: translateY(0); }
+  50% { transform: translateY(-8px); }
+}
+
+html {
+  scroll-behavior: smooth;
+}
+
+/* CANVAS */
+canvas {
+  border-radius:16px;
+  border:1px solid #ddd;
+  margin-top:10px;
+  background:white;
+}
+
+body {
+  animation: fadeIn 0.4s ease;
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; transform: scale(0.98); }
+  to { opacity: 1; transform: scale(1); }
+}
+
+</style>
+</head>
+
+<body>
+
+<div class="week" id="week"></div>
+<div id="focusView" style="display:none"></div>
+
+<script>
+const days = ["Mon","Tue","Wed","Thu","Fri","Sat","Sun"];
+let data = JSON.parse(localStorage.getItem("planner")) || {};
+let drawings = JSON.parse(localStorage.getItem("drawings")) || {};
+let currentDay = "";
+
+const week = document.getElementById("week");
+
+days.forEach(day=>{
+  const div=document.createElement("div");
+  div.className="day";
+  div.innerHTML=`<b>${day}</b><br>${(data[day]?.length||0)} tasks`;
+  div.onclick=()=>openDay(day);
+  week.appendChild(div);
+});
+
+function openDay(day){
+  currentDay=day;
+  const focus=document.getElementById("focusView");
+  focus.style.display="block";
+  focus.className="focus";
+
+  focus.innerHTML=`
+    <h2>${day}</h2>
+    <button onclick="closeDay()">Back</button>
+
+    <div class="timeline" id="tasks"></div>
+
+    <h3>Add Task</h3>
+
+    <label>Start</label>
+    <input type="time" id="start">
+
+    <label>End</label>
+    <input type="time" id="end">
+
+    <input id="task" placeholder="Task">
+    <button onclick="addTask()">Add</button>
+
+    <h3>Handwriting</h3>
+    <canvas id="canvas" width="300" height="200"></canvas>
+
+    <div style="margin-top:10px;">
+      <label>Pen Color: </label>
+      <input type="color" id="penColor" value="#000000">
+
+      <label>Thickness: </label>
+      <input type="number" id="penWidth" value="2" min="1" max="10">
+
+      <button onclick="useEraser()">Eraser</button>
+      <button onclick="usePen()">Pen</button>
+      <button onclick="saveDrawing()">Save</button>
+      <button onclick="clearCanvas()">Clear</button>
+      <button onclick="undo()">Undo</button>
+      <button onclick="redo()">Redo</button>
+    </div>
+  `;
+
+  renderTasks(day);
+  loadCanvas();
+}
+
+function closeDay(){
+  document.getElementById("focusView").style.display="none";
+  location.reload();
+}
+
+function openQuickAdd(){
+  document.getElementById("task").scrollIntoView({behavior:"smooth"});
+}
+
+function addTask(){
+  const start=document.getElementById("start").value;
+  const end=document.getElementById("end").value;
+  const task=document.getElementById("task").value = "";
+
+  if(!start||!end||!task) return alert("Fill all fields");
+
+  if(!data[currentDay]) data[currentDay]=[];
+
+  data[currentDay].push({start,end,task});
+  data[currentDay].sort((a,b)=>a.start.localeCompare(b.start));
+
+  localStorage.setItem("planner",JSON.stringify(data));
+
+  scheduleNotification(start,task);
+  renderTasks(currentDay);
+}
+
+function renderTasks(day){
+  const container=document.getElementById("tasks");
+  container.innerHTML="";
+
+  (data[day]||[]).forEach((t,index)=>{
+    const div=document.createElement("div");
+    div.className="task";
+    div.innerHTML=`
+      <b>${t.start} → ${t.end}</b><br>${t.task}
+      <br>
+      <button onclick="editTask(${index})">Edit</button>
+      <button onclick="deleteTask(${index})">Delete</button>
+    `;
+    container.appendChild(div);
+  });
+}
+
+function deleteTask(i){
+  data[currentDay].splice(i,1);
+  localStorage.setItem("planner",JSON.stringify(data));
+  renderTasks(currentDay);
+}
+
+function editTask(i){
+  const t=data[currentDay][i];
+  const newTask=prompt("Edit task",t.task);
+  if(newTask){
+    t.task=newTask;
+    localStorage.setItem("planner",JSON.stringify(data));
+    renderTasks(currentDay);
+  }
+}
+
+function clearCanvas(){
+  if(!confirm("Clear all notes?")) return;
+
+  const canvas = document.getElementById("canvas");
+  const ctx = canvas.getContext("2d");
+
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+  delete drawings[currentDay];
+  localStorage.setItem("drawings", JSON.stringify(drawings));
+}
+
+function scheduleNotification(time, task) {
+  if (Notification.permission !== "granted") {
+    Notification.requestPermission();
+  }
+
+  const now = new Date();
+  const [h, m] = time.split(":");
+  const target = new Date();
+  target.setHours(h, m, 0);
+
+  const delay = target - now;
+
+  if (delay > 0) {
+    setTimeout(() => {
+      navigator.serviceWorker.getRegistration().then(reg => {
+        if (reg) {
+          reg.showNotification("Reminder", {
+            body: task,
+            icon: "icon.png"
+          });
+        }
+      });
+    }, delay);
+  }
+}
+
+function loadCanvas() {
+  const canvas = document.getElementById("canvas");
+  const ctx = canvas.getContext("2d");
+
+  let drawing = false;
+  let erasing = false;
+  const undoStack = [];
+  const redoStack = [];
+
+  // default pen settings
+  ctx.strokeStyle = document.getElementById("penColor").value;
+  ctx.lineWidth = document.getElementById("penWidth").value;
+  ctx.lineCap = "round";
+  ctx.lineJoin = "round";
+
+  // handle color and thickness changes
+  document.getElementById("penColor").oninput = e => { if(!erasing) ctx.strokeStyle = e.target.value; };
+  document.getElementById("penWidth").oninput = e => ctx.lineWidth = e.target.value;
+
+  // save initial empty state
+  undoStack.push(canvas.toDataURL());
+
+  function saveState() {
+    undoStack.push(canvas.toDataURL());
+    redoStack.length = 0; // clear redo stack on new action
+  }
+
+  function restoreState(stack, oppositeStack) {
+    if(stack.length <= 1) return; // keep at least one state
+    oppositeStack.push(stack.pop());
+    const img = new Image();
+    img.src = stack[stack.length - 1]; // last state
+    img.onload = () => {
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      ctx.drawImage(img, 0, 0);
+    };
+  }
+
+  // Undo/Redo stacks are already defined: const undoStack = [], redoStack = [];
+
+window.undo = () => {
+  if (undoStack.length <= 1) return; // always keep initial state
+  const last = undoStack.pop();
+  redoStack.push(last);
+
+  const img = new Image();
+  img.src = undoStack[undoStack.length - 1]; // new top of undo stack
+  img.onload = () => {
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    ctx.drawImage(img, 0, 0);
+  };
+};
+
+window.redo = () => {
+  if (redoStack.length === 0) return; // nothing to redo
+  const imgData = redoStack.pop();
+  undoStack.push(imgData);
+
+  const img = new Image();
+  img.src = imgData;
+  img.onload = () => {
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    ctx.drawImage(img, 0, 0);
+  };
+};
+
+  function startDrawing(x, y) {
+  drawing = true;
+  ctx.beginPath();
+  ctx.moveTo(x, y);
+  // do NOT save state here; wait until stroke ends
+}
+
+function stopDrawing() {
+  if (!drawing) return;
+  drawing = false;
+  ctx.beginPath();
+  // Save the state AFTER stroke ends
+  undoStack.push(canvas.toDataURL());
+  redoStack.length = 0; // clear redo stack on new stroke
+}
+
+// Mouse events
+canvas.onmousedown = e => startDrawing(e.offsetX, e.offsetY);
+canvas.onmouseup = stopDrawing;
+canvas.onmousemove = e => {
+  if(!drawing) return;
+  ctx.lineTo(e.offsetX, e.offsetY);
+  ctx.stroke();
+};
+
+// Touch events
+canvas.ontouchstart = e => {
+  e.preventDefault();
+  const touch = e.touches[0];
+  const rect = canvas.getBoundingClientRect();
+  startDrawing(touch.clientX - rect.left, touch.clientY - rect.top);
+};
+
+canvas.ontouchmove = e => {
+  e.preventDefault();
+  if(!drawing) return;
+  const touch = e.touches[0];
+  const rect = canvas.getBoundingClientRect();
+  ctx.lineTo(touch.clientX - rect.left, touch.clientY - rect.top);
+  ctx.stroke();
+};
+
+canvas.ontouchend = stopDrawing;  
+
+  // load saved drawing for the day
+  if(drawings[currentDay]){
+    const img = new Image();
+    img.src = drawings[currentDay];
+    img.onload = () => ctx.drawImage(img, 0, 0);
+  }
+
+  // pen/eraser helper
+  window.useEraser = () => { erasing = true; ctx.strokeStyle = "#ffffff"; };
+  window.usePen = () => { erasing = false; ctx.strokeStyle = document.getElementById("penColor").value; };
+}
+
+function saveDrawing(){
+  const canvas=document.getElementById("canvas");
+  drawings[currentDay]=canvas.toDataURL();
+  localStorage.setItem("drawings",JSON.stringify(drawings));
+}
+
+if ("serviceWorker" in navigator) {
+  navigator.serviceWorker.register("service-worker.js");
+}
+</script>
+<div class="fab" onclick="scrollToForm()">+</div>
+</body>
+</html>
