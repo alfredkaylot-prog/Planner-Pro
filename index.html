@@ -260,8 +260,9 @@ function openQuickAdd(){
 function addTask(){
   const start=document.getElementById("start").value;
   const end=document.getElementById("end").value;
-  const task=document.getElementById("task").value = "";
-
+ const taskInput = document.getElementById("task");
+  const task = taskInput.value.trim();
+  
   if(!start||!end||!task) return alert("Fill all fields");
 
   if(!data[currentDay]) data[currentDay]=[];
